@@ -1,12 +1,59 @@
-type postRecipeState =
-  | IdlePost
-  | LoadingPost
-  | SuccesPost
-  | FailurePost;
+module Reducer = {
+  type state =
+    | Idle
+    | Submitting
+    | SubmittingSuccess
+    | SubmittingFail;
+
+  type action =
+    | Submit
+    | SubmitSuccess
+    | SubmitFail
+    | Reset;
+
+  let make = (state: state, action: action) => {
+    switch (state) {
+    | Idle =>
+      switch (action) {
+      | Submit => Submitting
+      | Reset
+      | SubmitSuccess
+      | SubmitFail => state
+      }
+    | Submitting =>
+      switch (action) {
+      | Reset
+      | Submit => state
+      | SubmitSuccess => SubmittingSuccess
+      | SubmitFail => SubmittingFail
+      }
+    | SubmittingFail =>
+      switch (action) {
+      | Reset => Idle
+      | Submit
+      | SubmitSuccess
+      | SubmitFail => state
+      }
+    | SubmittingSuccess =>
+      switch (action) {
+      | Reset => Idle
+      | Submit
+      | SubmitSuccess
+      | SubmitFail => state
+      }
+    };
+  };
+};
+
+/*
+ Refactor =>
+   - Optional props on RecipeModal
+   - Readme
+  */
 
 [@react.component]
 let make = () => {
-  let (postRecipeState, setPostRecipeState) = React.useState(() => IdlePost);
+  let (state, send) = React.useReducer(Reducer.make, Idle);
 
   let (recipeTitleValue, setRecipeTitleValue) = React.useState(() => "");
   let (recipeCategoryValue, setRecipeCategoryValue) =
@@ -33,9 +80,9 @@ let make = () => {
       "instruction",
       Js.Json.string(recipeInstructionValue),
     );
-    setPostRecipeState(_ => IdlePost);
+    send(Submit);
 
-    setPostRecipeState(_ => LoadingPost);
+    // setPostRecipeState(_ => Submitting);
     Js.Promise.(
       Fetch.fetchWithInit(
         "https://recipesappapi.herokuapp.com/recipe",
@@ -52,11 +99,13 @@ let make = () => {
       )
       |> then_(Fetch.Response.json)
       |> then_(_ => {
-           setPostRecipeState(_ => SuccesPost);
+           //  setPostRecipeState(_ => SubmittingSuccess);
+           send(SubmitSuccess);
            Js.Promise.resolve();
          })
       |> catch(_ => {
-           setPostRecipeState(_ => FailurePost);
+           //  setPostRecipeState(_ => SubmittingFail);
+           send(SubmitFail);
            Js.Promise.resolve();
          })
       |> ignore
@@ -178,28 +227,28 @@ let make = () => {
       </div>
     </div>
     <div>
-      {switch (postRecipeState) {
-       | IdlePost => React.null
-       | LoadingPost =>
+      {switch (state) {
+       | Idle => React.null
+       | Submitting =>
          <RecipeModal
            notes="Loading...."
            description="Please wait for a while"
            buttonTitle=""
            onClose={_ => ()}
          />
-       | FailurePost =>
+       | SubmittingFail =>
          <RecipeModal
            notes="Failure!"
            description="Something unexpected happened, please try again"
-           buttonTitle="Retry"
-           onClose={_ => setPostRecipeState(_ => IdlePost)}
+           buttonTitle="OK"
+           onClose={_ => send(Reset)}
          />
-       | SuccesPost =>
+       | SubmittingSuccess =>
          <RecipeModal
            notes="Success"
            description="You've already added new recipe! You can check it out on my recipe page"
            buttonTitle="OK"
-           onClose={_ => setPostRecipeState(_ => IdlePost)}
+           onClose={_ => send(Reset)}
          />
        }}
     </div>

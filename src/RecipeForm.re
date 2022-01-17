@@ -11,6 +11,78 @@ module Reducer = {
     | SubmitFail
     | Reset;
 
+  type recipe = {
+    title: string,
+    category: string,
+    image: string,
+    ingredients: string,
+    instruction: string,
+  };
+
+  type config = {
+    recipe,
+    clearForm: unit => unit,
+  };
+
+  let onStateChange = (~state: state, ~send: action => unit, ~config) => {
+    switch (state) {
+    | Idle => ()
+    | Submitting =>
+      let newRecipe = Js.Dict.empty();
+
+      Js.Dict.set(newRecipe, "title", Js.Json.string(config.recipe.title));
+      Js.Dict.set(
+        newRecipe,
+        "category",
+        Js.Json.string(config.recipe.category),
+      );
+      Js.Dict.set(newRecipe, "image", Js.Json.string(config.recipe.image));
+      Js.Dict.set(
+        newRecipe,
+        "ingredients",
+        Js.Json.string(config.recipe.ingredients),
+      );
+      Js.Dict.set(
+        newRecipe,
+        "instruction",
+        Js.Json.string(config.recipe.instruction),
+      );
+
+      // setPostRecipeState(_ => Submitting);
+      Js.Promise.(
+        Fetch.fetchWithInit(
+          "https://recipesappapi.herokuapp.com/recipe",
+          Fetch.RequestInit.make(
+            ~method_=Post,
+            ~headers=
+              Fetch.HeadersInit.make({"Content-Type": "application/json"}),
+            ~body=
+              Fetch.BodyInit.make(
+                Js.Json.stringify(Js.Json.object_(newRecipe)),
+              ),
+            (),
+          ),
+        )
+        |> then_(Fetch.Response.json)
+        |> then_(_ => {
+             //  setPostRecipeState(_ => SubmittingSuccess);
+             send(SubmitSuccess);
+
+             config.clearForm();
+             Js.Promise.resolve();
+           })
+        |> catch(_ => {
+             //  setPostRecipeState(_ => SubmittingFail);
+             send(SubmitFail);
+             Js.Promise.resolve();
+           })
+        |> ignore
+      );
+    | SubmittingSuccess
+    | SubmittingFail => ()
+    };
+  };
+
   let make = (state: state, action: action) => {
     switch (state) {
     | Idle =>
@@ -45,12 +117,6 @@ module Reducer = {
   };
 };
 
-/*
- Refactor =>
-   - Optional props on RecipeModal
-   - Readme
-  */
-
 [@react.component]
 let make = () => {
   let (state, send) = React.useReducer(Reducer.make, Idle);
@@ -64,59 +130,44 @@ let make = () => {
   let (recipeInstructionValue, setRecipeInstructionValue) =
     React.useState(() => "");
 
-  let handleAddRecipe = () => {
-    let newRecipe = Js.Dict.empty();
+  React.useEffect6(
+    () => {
+      let config: Reducer.config = {
+        recipe: {
+          title: recipeTitleValue,
+          category: recipeCategoryValue,
+          image: recipeImageValue,
+          ingredients: recipeIngredientsValue,
+          instruction: recipeInstructionValue,
+        },
+        clearForm: () => {
+          setRecipeTitleValue(_ => "");
+          setRecipeCategoryValue(_ => "");
+          setRecipeIngredientsValue(_ => "");
+          setRecipeInstructionValue(_ => "");
+          setRecipeImageValue(_ => "");
+        },
+      };
+      Reducer.onStateChange(~state, ~send, ~config);
+      None;
+    },
+    (
+      state,
+      recipeTitleValue,
+      recipeCategoryValue,
+      recipeImageValue,
+      recipeIngredientsValue,
+      recipeInstructionValue,
+    ),
+  );
 
-    Js.Dict.set(newRecipe, "title", Js.Json.string(recipeTitleValue));
-    Js.Dict.set(newRecipe, "category", Js.Json.string(recipeCategoryValue));
-    Js.Dict.set(newRecipe, "image", Js.Json.string(recipeImageValue));
-    Js.Dict.set(
-      newRecipe,
-      "ingredients",
-      Js.Json.string(recipeIngredientsValue),
-    );
-    Js.Dict.set(
-      newRecipe,
-      "instruction",
-      Js.Json.string(recipeInstructionValue),
-    );
-    send(Submit);
-
-    // setPostRecipeState(_ => Submitting);
-    Js.Promise.(
-      Fetch.fetchWithInit(
-        "https://recipesappapi.herokuapp.com/recipe",
-        Fetch.RequestInit.make(
-          ~method_=Post,
-          ~headers=
-            Fetch.HeadersInit.make({"Content-Type": "application/json"}),
-          ~body=
-            Fetch.BodyInit.make(
-              Js.Json.stringify(Js.Json.object_(newRecipe)),
-            ),
-          (),
-        ),
-      )
-      |> then_(Fetch.Response.json)
-      |> then_(_ => {
-           //  setPostRecipeState(_ => SubmittingSuccess);
-           send(SubmitSuccess);
-           Js.Promise.resolve();
-         })
-      |> catch(_ => {
-           //  setPostRecipeState(_ => SubmittingFail);
-           send(SubmitFail);
-           Js.Promise.resolve();
-         })
-      |> ignore
-    );
-
-    setRecipeTitleValue(_ => "");
-    setRecipeCategoryValue(_ => "");
-    setRecipeIngredientsValue(_ => "");
-    setRecipeInstructionValue(_ => "");
-    setRecipeImageValue(_ => "");
-  };
+  let isFormDisabled =
+    switch (state) {
+    | Idle => false
+    | Submitting
+    | SubmittingFail
+    | SubmittingSuccess => true
+    };
 
   <div className="mt-10 sm:mt-0">
     <div className="md:grid md:grid-cols-3 md:gap-6">
@@ -144,6 +195,7 @@ let make = () => {
                   id="recipe"
                   className="mt-1 focus:ring-indigo-500 focus:border-indigo-500 block w-full shadow-sm sm:text-sm border-4 border-blue-200 rounded-md"
                   value=recipeTitleValue
+                  disabled=isFormDisabled
                   onChange={event => {
                     let value = event->ReactEvent.Form.target##value;
                     setRecipeTitleValue(_ => value);
@@ -160,6 +212,7 @@ let make = () => {
                   id="category"
                   className="mt-1 focus:ring-indigo-500 focus:border-indigo-500 block w-full shadow-sm sm:text-sm border-4 border-blue-200 rounded-md"
                   value=recipeCategoryValue
+                  disabled=isFormDisabled
                   onChange={event => {
                     let value = event->ReactEvent.Form.target##value;
                     setRecipeCategoryValue(_ => value);
@@ -174,6 +227,7 @@ let make = () => {
                   type_="text"
                   name="imageurl"
                   id="imageurl"
+                  disabled=isFormDisabled
                   className="mt-1 focus:ring-indigo-500 focus:border-indigo-500 block w-full shadow-sm sm:text-sm border-4 border-blue-200 rounded-md"
                   value=recipeImageValue
                   onChange={event => {
@@ -190,6 +244,7 @@ let make = () => {
                   type_="text"
                   name="ingredients"
                   id="ingredients"
+                  disabled=isFormDisabled
                   className="mt-1 focus:ring-indigo-500 focus:border-indigo-500 block w-full shadow-sm sm:text-sm border-4 border-blue-200 rounded-md"
                   value=recipeIngredientsValue
                   onChange={event => {
@@ -206,6 +261,7 @@ let make = () => {
                   type_="text"
                   name="instruction"
                   id="instruction"
+                  disabled=isFormDisabled
                   className="mt-1 focus:ring-indigo-500 focus:border-indigo-500 block w-full shadow-sm sm:text-sm border-4 border-blue-200 rounded-md"
                   value=recipeInstructionValue
                   onChange={event => {
@@ -218,7 +274,8 @@ let make = () => {
           </div>
           <div className="px-4 py-3 bg-gray-50 text-right sm:px-6">
             <button
-              onClick={_ => {handleAddRecipe()}}
+              onClick={_ => {send(Submit)}}
+              disabled=isFormDisabled
               className="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
               "Submit"->React.string
             </button>
